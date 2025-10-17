@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Smart-Vend</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #e3f2fd, #f4f6f8);
+      margin: 0;
+      padding: 40px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+      max-width: 800px;
+      width: 100%;
+    }
+
+    h2 {
+      margin-top: 0;
+      color: #0078d4;
+      font-size: 28px;
+      text-align: center;
+    }
+	
+	.subheading {
+	  margin-top: -10px;
+	  margin-bottom: 20px;
+	  font-size: 18px;
+	  color: #555;
+	  text-align: center;
+	}
+
+    textarea {
+      width: 100%;
+      height: 120px;
+      padding: 12px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+
+    button {
+      background-color: #0078d4;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 12px;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #005fa3;
+    }
+
+    #response {
+      margin-top: 30px;
+      background: #f0f4f8;
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid #cfd8dc;
+      white-space: pre-wrap;
+      font-family: Consolas, monospace;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .spinner {
+      display: none;
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    .spinner::after {
+      content: "⏳ Thinking...";
+      font-style: italic;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Smart-Vend</h2>
+	<p class="subheading">Your intelligent assistant for vendor insights and recommendations.</p>
+    <textarea id="query" placeholder="Ask something like: 'Top 5 vendors with low breach rate for LED Monitors'"></textarea><br>
+    <button onclick="sendQuery()">Submit</button>
+    <div class="spinner" id="spinner"></div>
+    <div id="response"></div>
+	<button id="downloadBtn" style="display:none;" onclick="downloadCSV()">Download as CSV</button>
+  </div>
+
+  <script>
+  function stripPromptEcho(text) {
+	const lines = text.trim().split("\n");
+	const vendorLines = lines.filter(line =>
+    line.trim().startsWith("Vendor ") &&
+    !line.includes("[Name]") &&
+    !line.includes("[Product]")
+  );
+	return vendorLines.join("\n");
+  }
+
+  function downloadCSV() {
+    const responseText = document.getElementById("response").innerText;
+
+    const vendorLines = responseText
+      .split("\n")
+      .filter(line => line.trim().startsWith("Vendor"));
+
+    const headers = ["Vendor Name", "Product", "Region", "Cost", "Turnaround Time", "Fulfillment Rate", "Breach Rate"];
+
+    const rows = vendorLines.map(line => {
+      try {
+        const vendorName = line.match(/Vendor (.*?) has product/)[1].trim();
+        const product = line.match(/has product (.*?), operating/)[1].trim();
+        const region = line.match(/regions such as (.*?) with cost/)[1].trim();
+        const cost = line.match(/with cost of ([\d.]+), turnaround/)[1].trim();
+        const turnaround = line.match(/turnaround time ([\d.]+) days/)[1].trim();
+        const fulfillment = line.match(/fulfillment rate ([\d.]+)%/)[1].trim();
+        const breach = line.match(/breach rate ([\d.]+)\./)[1].trim();
+
+        return [vendorName, product, region, cost, turnaround, fulfillment, breach].join(",");
+      } catch (err) {
+        console.warn("Skipped malformed line:", line);
+        return null;
+      }
+    }).filter(Boolean);
+
+    const csvContent = [headers.join(","), ...rows].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "vendor_recommendations.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  async function sendQuery() {
+    const query = document.getElementById("query").value.trim();
+    const responseBox = document.getElementById("response");
+    const spinner = document.getElementById("spinner");
+
+    if (!query) {
+      responseBox.innerText = "Please enter a question.";
+      return;
+    }
+
+    responseBox.innerText = "";
+    spinner.style.display = "block";
+
+    try {
+      const res = await fetch("http://localhost:8000/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
+      });
+
+      const data = await res.json();
+      spinner.style.display = "none";
+
+      const cleanedAnswer = stripPromptEcho(data.answer);
+      responseBox.innerText = cleanedAnswer;
+      document.getElementById("downloadBtn").style.display = "block";
+    } catch (err) {
+      spinner.style.display = "none";
+      responseBox.innerText = "Error fetching response. Please check your backend.";
+      console.error(err);
+    }
+  }
+</script>
+</body>
+</html>
